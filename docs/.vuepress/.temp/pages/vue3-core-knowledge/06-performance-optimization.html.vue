@@ -1,0 +1,762 @@
+<template><div><h1 id="vue3性能优化详解" tabindex="-1"><a class="header-anchor" href="#vue3性能优化详解"><span>Vue3性能优化详解</span></a></h1>
+<h2 id="🎯-性能优化概述" tabindex="-1"><a class="header-anchor" href="#🎯-性能优化概述"><span>🎯 性能优化概述</span></a></h2>
+<p>Vue3在性能优化方面做了大量工作，从编译时到运行时都有相应的优化策略，实现了显著的性能提升。</p>
+<h3 id="优化架构图" tabindex="-1"><a class="header-anchor" href="#优化架构图"><span>优化架构图</span></a></h3>
+<div class="language-text line-numbers-mode" data-highlighter="prismjs" data-ext="text"><pre v-pre><code><span class="line">┌─────────────────────────────────────┐</span>
+<span class="line">│        编译时优化 (Compile-time)    │</span>
+<span class="line">│  静态提升 | 补丁标志 | 块级优化     │</span>
+<span class="line">├─────────────────────────────────────┤</span>
+<span class="line">│        运行时优化 (Runtime)         │</span>
+<span class="line">│  快速路径 | 批量更新 | 缓存机制     │</span>
+<span class="line">├─────────────────────────────────────┤</span>
+<span class="line">│        内存优化 (Memory)            │</span>
+<span class="line">│  WeakMap | 自动GC | 内存泄漏防护    │</span>
+<span class="line">└─────────────────────────────────────┘</span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="🔧-编译时优化" tabindex="-1"><a class="header-anchor" href="#🔧-编译时优化"><span>🔧 编译时优化</span></a></h2>
+<h3 id="_1-静态提升-static-hoisting" tabindex="-1"><a class="header-anchor" href="#_1-静态提升-static-hoisting"><span>1. 静态提升 (Static Hoisting)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 静态节点提升</span></span>
+<span class="line"><span class="token keyword">const</span> hoisted <span class="token operator">=</span> <span class="token comment">/*#__PURE__*/</span> <span class="token function">createVNode</span><span class="token punctuation">(</span></span>
+<span class="line">  <span class="token string">'div'</span><span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">class</span><span class="token operator">:</span> <span class="token string">'static-class'</span><span class="token punctuation">,</span></span>
+<span class="line">    id<span class="token operator">:</span> <span class="token string">'static-id'</span><span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">}</span><span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">[</span><span class="token function">createVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">'静态内容'</span><span class="token punctuation">)</span><span class="token punctuation">]</span><span class="token punctuation">,</span></span>
+<span class="line"><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 编译结果</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">render</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">return</span> <span class="token punctuation">(</span></span>
+<span class="line">    <span class="token function">openBlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">    <span class="token function">createElementBlock</span><span class="token punctuation">(</span><span class="token string">'div'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token punctuation">[</span></span>
+<span class="line">      hoisted<span class="token punctuation">,</span> <span class="token comment">// 复用静态节点</span></span>
+<span class="line">      <span class="token function">createElementVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token function">toDisplayString</span><span class="token punctuation">(</span>_ctx<span class="token punctuation">.</span>message<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">    <span class="token punctuation">]</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">)</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 静态提升优化</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">transformHoist</span><span class="token punctuation">(</span>node<span class="token operator">:</span> ElementNode<span class="token punctuation">,</span> context<span class="token operator">:</span> TransformContext<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">isStaticNode</span><span class="token punctuation">(</span>node<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 提升静态节点</span></span>
+<span class="line">    <span class="token keyword">const</span> hoisted <span class="token operator">=</span> <span class="token function">generateStaticNode</span><span class="token punctuation">(</span>node<span class="token punctuation">,</span> context<span class="token punctuation">)</span></span>
+<span class="line">    context<span class="token punctuation">.</span><span class="token function">hoist</span><span class="token punctuation">(</span>hoisted<span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 替换为静态引用</span></span>
+<span class="line">    context<span class="token punctuation">.</span><span class="token function">replaceNode</span><span class="token punctuation">(</span></span>
+<span class="line">      <span class="token function">createSimpleExpression</span><span class="token punctuation">(</span></span>
+<span class="line">        context<span class="token punctuation">.</span><span class="token function">helperString</span><span class="token punctuation">(</span>HoistType<span class="token punctuation">.</span><span class="token constant">HOISTED</span><span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">        <span class="token boolean">false</span><span class="token punctuation">,</span></span>
+<span class="line">        node<span class="token punctuation">.</span>loc<span class="token punctuation">,</span></span>
+<span class="line">      <span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">    <span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 检查静态节点</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">isStaticNode</span><span class="token punctuation">(</span>node<span class="token operator">:</span> ElementNode<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">boolean</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">// 检查属性是否静态</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> prop <span class="token keyword">of</span> node<span class="token punctuation">.</span>props<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>type <span class="token operator">===</span> NodeTypes<span class="token punctuation">.</span><span class="token constant">DIRECTIVE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">return</span> <span class="token boolean">false</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>type <span class="token operator">===</span> NodeTypes<span class="token punctuation">.</span><span class="token constant">ATTRIBUTE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>value <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token function">isStaticExp</span><span class="token punctuation">(</span>prop<span class="token punctuation">.</span>value<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token keyword">return</span> <span class="token boolean">false</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 检查子节点是否静态</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> child <span class="token keyword">of</span> node<span class="token punctuation">.</span>children<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">isStaticChild</span><span class="token punctuation">(</span>child<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">return</span> <span class="token boolean">false</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">return</span> <span class="token boolean">true</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_2-补丁标志-patch-flags" tabindex="-1"><a class="header-anchor" href="#_2-补丁标志-patch-flags"><span>2. 补丁标志 (Patch Flags)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 补丁标志定义</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">const</span> <span class="token keyword">enum</span> PatchFlags <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token constant">TEXT</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token comment">// 动态文本内容</span></span>
+<span class="line">  <span class="token constant">CLASS</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token comment">// 动态类名</span></span>
+<span class="line">  <span class="token constant">STYLE</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token comment">// 动态样式</span></span>
+<span class="line">  <span class="token constant">PROPS</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">3</span><span class="token punctuation">,</span> <span class="token comment">// 动态属性</span></span>
+<span class="line">  <span class="token constant">FULL_PROPS</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token comment">// 全量属性更新</span></span>
+<span class="line">  <span class="token constant">HYDRATE_EVENTS</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">5</span><span class="token punctuation">,</span> <span class="token comment">// 水合事件</span></span>
+<span class="line">  <span class="token constant">STABLE_FRAGMENT</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">6</span><span class="token punctuation">,</span> <span class="token comment">// 稳定片段</span></span>
+<span class="line">  <span class="token constant">KEYED_FRAGMENT</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">7</span><span class="token punctuation">,</span> <span class="token comment">// 带键的片段</span></span>
+<span class="line">  <span class="token constant">UNKEYED_FRAGMENT</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">8</span><span class="token punctuation">,</span> <span class="token comment">// 无键的片段</span></span>
+<span class="line">  <span class="token constant">NEED_PATCH</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">9</span><span class="token punctuation">,</span> <span class="token comment">// 需要补丁</span></span>
+<span class="line">  <span class="token constant">DYNAMIC_SLOTS</span> <span class="token operator">=</span> <span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">10</span><span class="token punctuation">,</span> <span class="token comment">// 动态插槽</span></span>
+<span class="line">  <span class="token constant">HOISTED</span> <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token comment">// 静态提升</span></span>
+<span class="line">  <span class="token constant">BAIL</span> <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token comment">// 跳过优化</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 生成补丁标志</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">getPatchFlag</span><span class="token punctuation">(</span>node<span class="token operator">:</span> ElementNode<span class="token punctuation">,</span> context<span class="token operator">:</span> TransformContext<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">number</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">let</span> patchFlag <span class="token operator">=</span> <span class="token number">0</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 检查动态属性</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> prop <span class="token keyword">of</span> node<span class="token punctuation">.</span>props<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>type <span class="token operator">===</span> NodeTypes<span class="token punctuation">.</span><span class="token constant">DIRECTIVE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> dir <span class="token operator">=</span> prop</span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>dir<span class="token punctuation">.</span>name <span class="token operator">===</span> <span class="token string">'bind'</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        patchFlag <span class="token operator">|=</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">PROPS</span></span>
+<span class="line">      <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>dir<span class="token punctuation">.</span>name <span class="token operator">===</span> <span class="token string">'on'</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        patchFlag <span class="token operator">|=</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">HYDRATE_EVENTS</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>type <span class="token operator">===</span> NodeTypes<span class="token punctuation">.</span><span class="token constant">ATTRIBUTE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>name <span class="token operator">===</span> <span class="token string">'class'</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        patchFlag <span class="token operator">|=</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">CLASS</span></span>
+<span class="line">      <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>prop<span class="token punctuation">.</span>name <span class="token operator">===</span> <span class="token string">'style'</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        patchFlag <span class="token operator">|=</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">STYLE</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 检查动态子节点</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> child <span class="token keyword">of</span> node<span class="token punctuation">.</span>children<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>child<span class="token punctuation">.</span>type <span class="token operator">===</span> NodeTypes<span class="token punctuation">.</span><span class="token constant">INTERPOLATION</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      patchFlag <span class="token operator">|=</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">TEXT</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">return</span> patchFlag</span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 运行时优化</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">patchElement</span><span class="token punctuation">(</span>n1<span class="token operator">:</span> VNode<span class="token punctuation">,</span> n2<span class="token operator">:</span> VNode<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> <span class="token punctuation">{</span> patchFlag <span class="token punctuation">}</span> <span class="token operator">=</span> n2</span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">></span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 有补丁标志，进行优化更新</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">CLASS</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新类名</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class <span class="token operator">!==</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostPatchProp</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> <span class="token string">'class'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">STYLE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新样式</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style <span class="token operator">!==</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostPatchProp</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> <span class="token string">'style'</span><span class="token punctuation">,</span> n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">TEXT</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新文本内容</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>children <span class="token operator">!==</span> n2<span class="token punctuation">.</span>children<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostSetElementText</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>children <span class="token keyword">as</span> <span class="token builtin">string</span><span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 无补丁标志，全量更新</span></span>
+<span class="line">    <span class="token function">patchProps</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> n1<span class="token punctuation">.</span>props<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_3-块级优化-block-optimization" tabindex="-1"><a class="header-anchor" href="#_3-块级优化-block-optimization"><span>3. 块级优化 (Block Optimization)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 块级节点概念</span></span>
+<span class="line"><span class="token keyword">let</span> currentBlock<span class="token operator">:</span> VNode<span class="token punctuation">[</span><span class="token punctuation">]</span> <span class="token operator">|</span> <span class="token keyword">null</span> <span class="token operator">=</span> <span class="token keyword">null</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 开启块级追踪</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">openBlock</span><span class="token punctuation">(</span>disableTracking <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>disableTracking<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    currentBlock <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 关闭块级追踪</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">closeBlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  currentBlock <span class="token operator">=</span> <span class="token keyword">null</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 设置块级节点</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">setupBlock</span><span class="token punctuation">(</span>vnode<span class="token operator">:</span> VNode<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>currentBlock<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    vnode<span class="token punctuation">.</span>dynamicChildren <span class="token operator">=</span> currentBlock</span>
+<span class="line">    currentBlock <span class="token operator">=</span> <span class="token keyword">null</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 块级优化示例</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">render</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">return</span> <span class="token punctuation">(</span></span>
+<span class="line">    <span class="token function">openBlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">    <span class="token function">createElementBlock</span><span class="token punctuation">(</span><span class="token string">'div'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token punctuation">[</span></span>
+<span class="line">      <span class="token function">createElementVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token function">toDisplayString</span><span class="token punctuation">(</span>_ctx<span class="token punctuation">.</span>message<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token comment">// TEXT</span></span>
+<span class="line">      <span class="token function">createElementVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token function">toDisplayString</span><span class="token punctuation">(</span>_ctx<span class="token punctuation">.</span>count<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token comment">// TEXT</span></span>
+<span class="line">      <span class="token function">createElementVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">'静态文本'</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token comment">// 静态节点</span></span>
+<span class="line">    <span class="token punctuation">]</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">)</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 运行时块级更新</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">patchBlockChildren</span><span class="token punctuation">(</span>n1<span class="token operator">:</span> VNode<span class="token punctuation">,</span> n2<span class="token operator">:</span> VNode<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> <span class="token punctuation">{</span> dynamicChildren <span class="token punctuation">}</span> <span class="token operator">=</span> n2</span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>dynamicChildren<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 只更新动态子节点</span></span>
+<span class="line">    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">let</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> dynamicChildren<span class="token punctuation">.</span>length<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> dynamicChild <span class="token operator">=</span> dynamicChildren<span class="token punctuation">[</span>i<span class="token punctuation">]</span></span>
+<span class="line">      <span class="token keyword">const</span> child <span class="token operator">=</span> n1<span class="token punctuation">.</span>dynamicChildren<span class="token operator">!</span><span class="token punctuation">[</span>i<span class="token punctuation">]</span></span>
+<span class="line">      <span class="token function">patch</span><span class="token punctuation">(</span>child<span class="token punctuation">,</span> dynamicChild<span class="token punctuation">,</span> container<span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 全量更新</span></span>
+<span class="line">    <span class="token function">patchChildren</span><span class="token punctuation">(</span>n1<span class="token punctuation">,</span> n2<span class="token punctuation">,</span> container<span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="⚡-运行时优化" tabindex="-1"><a class="header-anchor" href="#⚡-运行时优化"><span>⚡ 运行时优化</span></a></h2>
+<h3 id="_1-快速路径-fast-path" tabindex="-1"><a class="header-anchor" href="#_1-快速路径-fast-path"><span>1. 快速路径 (Fast Path)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 快速路径检查</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">patchElement</span><span class="token punctuation">(</span>n1<span class="token operator">:</span> VNode<span class="token punctuation">,</span> n2<span class="token operator">:</span> VNode<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> <span class="token punctuation">{</span> patchFlag <span class="token punctuation">}</span> <span class="token operator">=</span> n2</span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">></span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 快速路径：有补丁标志</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">CLASS</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新类名</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class <span class="token operator">!==</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostPatchProp</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> <span class="token string">'class'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>class<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">STYLE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新样式</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style <span class="token operator">!==</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostPatchProp</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> <span class="token string">'style'</span><span class="token punctuation">,</span> n1<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">.</span>style<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">&amp;</span> PatchFlags<span class="token punctuation">.</span><span class="token constant">TEXT</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 只更新文本内容</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>n1<span class="token punctuation">.</span>children <span class="token operator">!==</span> n2<span class="token punctuation">.</span>children<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">hostSetElementText</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>children <span class="token keyword">as</span> <span class="token builtin">string</span><span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 慢速路径：全量更新</span></span>
+<span class="line">    <span class="token function">patchProps</span><span class="token punctuation">(</span>el<span class="token punctuation">,</span> n1<span class="token punctuation">.</span>props<span class="token punctuation">,</span> n2<span class="token punctuation">.</span>props<span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 快速Diff算法</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">patchKeyedChildren</span><span class="token punctuation">(</span>c1<span class="token operator">:</span> VNode<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span> c2<span class="token operator">:</span> VNodeArrayChildren<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">let</span> i <span class="token operator">=</span> <span class="token number">0</span></span>
+<span class="line">  <span class="token keyword">const</span> l2 <span class="token operator">=</span> c2<span class="token punctuation">.</span>length</span>
+<span class="line">  <span class="token keyword">let</span> e1 <span class="token operator">=</span> c1<span class="token punctuation">.</span>length <span class="token operator">-</span> <span class="token number">1</span></span>
+<span class="line">  <span class="token keyword">let</span> e2 <span class="token operator">=</span> l2 <span class="token operator">-</span> <span class="token number">1</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 1. 从头部开始比较</span></span>
+<span class="line">  <span class="token keyword">while</span> <span class="token punctuation">(</span>i <span class="token operator">&lt;=</span> e1 <span class="token operator">&amp;&amp;</span> i <span class="token operator">&lt;=</span> e2<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">const</span> n1 <span class="token operator">=</span> c1<span class="token punctuation">[</span>i<span class="token punctuation">]</span></span>
+<span class="line">    <span class="token keyword">const</span> n2 <span class="token operator">=</span> c2<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode</span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">isSameVNodeType</span><span class="token punctuation">(</span>n1<span class="token punctuation">,</span> n2<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token function">patch</span><span class="token punctuation">(</span></span>
+<span class="line">        n1<span class="token punctuation">,</span></span>
+<span class="line">        n2<span class="token punctuation">,</span></span>
+<span class="line">        container<span class="token punctuation">,</span></span>
+<span class="line">        <span class="token keyword">null</span><span class="token punctuation">,</span></span>
+<span class="line">        parentComponent<span class="token punctuation">,</span></span>
+<span class="line">        parentSuspense<span class="token punctuation">,</span></span>
+<span class="line">        namespace<span class="token punctuation">,</span></span>
+<span class="line">        slotScopeIds<span class="token punctuation">,</span></span>
+<span class="line">        optimized<span class="token punctuation">,</span></span>
+<span class="line">      <span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">break</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">    i<span class="token operator">++</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 2. 从尾部开始比较</span></span>
+<span class="line">  <span class="token keyword">while</span> <span class="token punctuation">(</span>i <span class="token operator">&lt;=</span> e1 <span class="token operator">&amp;&amp;</span> i <span class="token operator">&lt;=</span> e2<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">const</span> n1 <span class="token operator">=</span> c1<span class="token punctuation">[</span>e1<span class="token punctuation">]</span></span>
+<span class="line">    <span class="token keyword">const</span> n2 <span class="token operator">=</span> c2<span class="token punctuation">[</span>e2<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode</span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">isSameVNodeType</span><span class="token punctuation">(</span>n1<span class="token punctuation">,</span> n2<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token function">patch</span><span class="token punctuation">(</span></span>
+<span class="line">        n1<span class="token punctuation">,</span></span>
+<span class="line">        n2<span class="token punctuation">,</span></span>
+<span class="line">        container<span class="token punctuation">,</span></span>
+<span class="line">        <span class="token keyword">null</span><span class="token punctuation">,</span></span>
+<span class="line">        parentComponent<span class="token punctuation">,</span></span>
+<span class="line">        parentSuspense<span class="token punctuation">,</span></span>
+<span class="line">        namespace<span class="token punctuation">,</span></span>
+<span class="line">        slotScopeIds<span class="token punctuation">,</span></span>
+<span class="line">        optimized<span class="token punctuation">,</span></span>
+<span class="line">      <span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">break</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">    e1<span class="token operator">--</span></span>
+<span class="line">    e2<span class="token operator">--</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 3. 处理新增和删除</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">></span> e1<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 新增节点</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">&lt;=</span> e2<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> nextPos <span class="token operator">=</span> e2 <span class="token operator">+</span> <span class="token number">1</span></span>
+<span class="line">      <span class="token keyword">const</span> anchor <span class="token operator">=</span> nextPos <span class="token operator">&lt;</span> l2 <span class="token operator">?</span> <span class="token punctuation">(</span>c2<span class="token punctuation">[</span>nextPos<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode<span class="token punctuation">)</span><span class="token punctuation">.</span>el <span class="token operator">:</span> parentAnchor</span>
+<span class="line">      <span class="token keyword">while</span> <span class="token punctuation">(</span>i <span class="token operator">&lt;=</span> e2<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">patch</span><span class="token punctuation">(</span></span>
+<span class="line">          <span class="token keyword">null</span><span class="token punctuation">,</span></span>
+<span class="line">          c2<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode<span class="token punctuation">,</span></span>
+<span class="line">          container<span class="token punctuation">,</span></span>
+<span class="line">          anchor<span class="token punctuation">,</span></span>
+<span class="line">          parentComponent<span class="token punctuation">,</span></span>
+<span class="line">          parentSuspense<span class="token punctuation">,</span></span>
+<span class="line">          namespace<span class="token punctuation">,</span></span>
+<span class="line">          slotScopeIds<span class="token punctuation">,</span></span>
+<span class="line">          optimized<span class="token punctuation">,</span></span>
+<span class="line">        <span class="token punctuation">)</span></span>
+<span class="line">        i<span class="token operator">++</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">></span> e2<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 删除节点</span></span>
+<span class="line">    <span class="token keyword">while</span> <span class="token punctuation">(</span>i <span class="token operator">&lt;=</span> e1<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token function">unmount</span><span class="token punctuation">(</span>c1<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> parentComponent<span class="token punctuation">,</span> parentSuspense<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span></span>
+<span class="line">      i<span class="token operator">++</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 处理未知序列</span></span>
+<span class="line">    <span class="token keyword">const</span> s1 <span class="token operator">=</span> i</span>
+<span class="line">    <span class="token keyword">const</span> s2 <span class="token operator">=</span> i</span>
+<span class="line">    <span class="token keyword">const</span> keyToNewIndexMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Map</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 建立新节点的key映射</span></span>
+<span class="line">    <span class="token keyword">for</span> <span class="token punctuation">(</span>i <span class="token operator">=</span> s2<span class="token punctuation">;</span> i <span class="token operator">&lt;=</span> e2<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> nextChild <span class="token operator">=</span> c2<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode</span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>nextChild<span class="token punctuation">.</span>key <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        keyToNewIndexMap<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span>nextChild<span class="token punctuation">.</span>key<span class="token punctuation">,</span> i<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 更新和移动节点</span></span>
+<span class="line">    <span class="token keyword">let</span> patched <span class="token operator">=</span> <span class="token number">0</span></span>
+<span class="line">    <span class="token keyword">const</span> toBePatched <span class="token operator">=</span> e2 <span class="token operator">-</span> s2 <span class="token operator">+</span> <span class="token number">1</span></span>
+<span class="line">    <span class="token keyword">let</span> moved <span class="token operator">=</span> <span class="token boolean">false</span></span>
+<span class="line">    <span class="token keyword">let</span> maxNewIndexSoFar <span class="token operator">=</span> <span class="token number">0</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">for</span> <span class="token punctuation">(</span>i <span class="token operator">=</span> s1<span class="token punctuation">;</span> i <span class="token operator">&lt;=</span> e1<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> prevChild <span class="token operator">=</span> c1<span class="token punctuation">[</span>i<span class="token punctuation">]</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>patched <span class="token operator">>=</span> toBePatched<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">unmount</span><span class="token punctuation">(</span>prevChild<span class="token punctuation">,</span> parentComponent<span class="token punctuation">,</span> parentSuspense<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span></span>
+<span class="line">        <span class="token keyword">continue</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">      <span class="token keyword">let</span> newIndex</span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>prevChild<span class="token punctuation">.</span>key <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        newIndex <span class="token operator">=</span> keyToNewIndexMap<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span>prevChild<span class="token punctuation">.</span>key<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token comment">// 无key的节点，需要遍历查找</span></span>
+<span class="line">        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">let</span> j <span class="token operator">=</span> s2<span class="token punctuation">;</span> j <span class="token operator">&lt;=</span> e2<span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">          <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">isSameVNodeType</span><span class="token punctuation">(</span>prevChild<span class="token punctuation">,</span> c2<span class="token punctuation">[</span>j<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">            newIndex <span class="token operator">=</span> j</span>
+<span class="line">            <span class="token keyword">break</span></span>
+<span class="line">          <span class="token punctuation">}</span></span>
+<span class="line">        <span class="token punctuation">}</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>newIndex <span class="token operator">===</span> <span class="token keyword">undefined</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token function">unmount</span><span class="token punctuation">(</span>prevChild<span class="token punctuation">,</span> parentComponent<span class="token punctuation">,</span> parentSuspense<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span></span>
+<span class="line">      <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token keyword">if</span> <span class="token punctuation">(</span>newIndex <span class="token operator">>=</span> maxNewIndexSoFar<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">          maxNewIndexSoFar <span class="token operator">=</span> newIndex</span>
+<span class="line">        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">          moved <span class="token operator">=</span> <span class="token boolean">true</span></span>
+<span class="line">        <span class="token punctuation">}</span></span>
+<span class="line">        <span class="token function">patch</span><span class="token punctuation">(</span></span>
+<span class="line">          prevChild<span class="token punctuation">,</span></span>
+<span class="line">          c2<span class="token punctuation">[</span>newIndex<span class="token punctuation">]</span> <span class="token keyword">as</span> VNode<span class="token punctuation">,</span></span>
+<span class="line">          container<span class="token punctuation">,</span></span>
+<span class="line">          <span class="token keyword">null</span><span class="token punctuation">,</span></span>
+<span class="line">          parentComponent<span class="token punctuation">,</span></span>
+<span class="line">          parentSuspense<span class="token punctuation">,</span></span>
+<span class="line">          namespace<span class="token punctuation">,</span></span>
+<span class="line">          slotScopeIds<span class="token punctuation">,</span></span>
+<span class="line">          optimized<span class="token punctuation">,</span></span>
+<span class="line">        <span class="token punctuation">)</span></span>
+<span class="line">        patched<span class="token operator">++</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_2-批量更新-batch-updates" tabindex="-1"><a class="header-anchor" href="#_2-批量更新-batch-updates"><span>2. 批量更新 (Batch Updates)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 批量深度</span></span>
+<span class="line"><span class="token keyword">let</span> batchDepth <span class="token operator">=</span> <span class="token number">0</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 开始批量</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">startBatch</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  batchDepth<span class="token operator">++</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 结束批量</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">endBatch</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">--</span>batchDepth <span class="token operator">></span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">return</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 执行队列中的任务</span></span>
+<span class="line">  <span class="token keyword">let</span> error<span class="token operator">:</span> <span class="token builtin">unknown</span></span>
+<span class="line">  <span class="token keyword">while</span> <span class="token punctuation">(</span>batchedSub<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">let</span> e<span class="token operator">:</span> Subscriber <span class="token operator">|</span> <span class="token keyword">undefined</span> <span class="token operator">=</span> batchedSub</span>
+<span class="line">    batchedSub <span class="token operator">=</span> <span class="token keyword">undefined</span></span>
+<span class="line">    <span class="token keyword">while</span> <span class="token punctuation">(</span>e<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">const</span> next<span class="token operator">:</span> Subscriber <span class="token operator">|</span> <span class="token keyword">undefined</span> <span class="token operator">=</span> e<span class="token punctuation">.</span>next</span>
+<span class="line">      e<span class="token punctuation">.</span>next <span class="token operator">=</span> <span class="token keyword">undefined</span></span>
+<span class="line">      e<span class="token punctuation">.</span>flags <span class="token operator">&amp;=</span> <span class="token operator">~</span>EffectFlags<span class="token punctuation">.</span><span class="token constant">NOTIFIED</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>e<span class="token punctuation">.</span>flags <span class="token operator">&amp;</span> EffectFlags<span class="token punctuation">.</span><span class="token constant">ACTIVE</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">        <span class="token keyword">try</span> <span class="token punctuation">{</span></span>
+<span class="line">          <span class="token punctuation">;</span><span class="token punctuation">(</span>e <span class="token keyword">as</span> ReactiveEffect<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">trigger</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span>err<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">          <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>error<span class="token punctuation">)</span> error <span class="token operator">=</span> err</span>
+<span class="line">        <span class="token punctuation">}</span></span>
+<span class="line">      <span class="token punctuation">}</span></span>
+<span class="line">      e <span class="token operator">=</span> next</span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>error<span class="token punctuation">)</span> <span class="token keyword">throw</span> error</span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 批量任务</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">batch</span><span class="token punctuation">(</span>sub<span class="token operator">:</span> Subscriber<span class="token punctuation">,</span> isComputed <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  sub<span class="token punctuation">.</span>flags <span class="token operator">|=</span> EffectFlags<span class="token punctuation">.</span><span class="token constant">NOTIFIED</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>isComputed<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// computed effect：添加到computed队列</span></span>
+<span class="line">    sub<span class="token punctuation">.</span>next <span class="token operator">=</span> batchedComputed</span>
+<span class="line">    batchedComputed <span class="token operator">=</span> sub</span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 普通effect：添加到普通队列</span></span>
+<span class="line">    sub<span class="token punctuation">.</span>next <span class="token operator">=</span> batchedSub</span>
+<span class="line">    batchedSub <span class="token operator">=</span> sub</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_3-缓存机制-caching" tabindex="-1"><a class="header-anchor" href="#_3-缓存机制-caching"><span>3. 缓存机制 (Caching)</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 计算属性缓存</span></span>
+<span class="line"><span class="token keyword">class</span> <span class="token class-name">ComputedRefImpl<span class="token operator">&lt;</span><span class="token constant">T</span><span class="token operator">></span></span> <span class="token keyword">implements</span> <span class="token class-name">Subscriber</span> <span class="token punctuation">{</span></span>
+<span class="line">  _value<span class="token operator">:</span> <span class="token builtin">any</span> <span class="token operator">=</span> <span class="token keyword">undefined</span></span>
+<span class="line">  dep<span class="token operator">:</span> Dep <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Dep</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span></span>
+<span class="line">  flags<span class="token operator">:</span> EffectFlags <span class="token operator">=</span> EffectFlags<span class="token punctuation">.</span><span class="token constant">DIRTY</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">get</span> <span class="token function">value</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token constant">T</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">this</span><span class="token punctuation">.</span>dep<span class="token punctuation">.</span><span class="token function">track</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">    <span class="token function">refreshComputed</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span> <span class="token comment">// 只在需要时重新计算</span></span>
+<span class="line">    <span class="token keyword">return</span> <span class="token keyword">this</span><span class="token punctuation">.</span>_value</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token function">notify</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token boolean">true</span> <span class="token operator">|</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">this</span><span class="token punctuation">.</span>flags <span class="token operator">|=</span> EffectFlags<span class="token punctuation">.</span><span class="token constant">DIRTY</span> <span class="token comment">// 标记为脏</span></span>
+<span class="line">    <span class="token function">batch</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span> <span class="token comment">// 批量更新</span></span>
+<span class="line">    <span class="token keyword">return</span> <span class="token boolean">true</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 版本控制缓存</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">isDirty</span><span class="token punctuation">(</span>sub<span class="token operator">:</span> Subscriber<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">boolean</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">let</span> link <span class="token operator">=</span> sub<span class="token punctuation">.</span>deps<span class="token punctuation">;</span> link<span class="token punctuation">;</span> link <span class="token operator">=</span> link<span class="token punctuation">.</span>nextDep<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 检查版本号是否匹配</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>dep<span class="token punctuation">.</span>version <span class="token operator">!==</span> link<span class="token punctuation">.</span>version<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">return</span> <span class="token boolean">true</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">    <span class="token comment">// 检查computed依赖</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>dep<span class="token punctuation">.</span>computed <span class="token operator">&amp;&amp;</span> <span class="token function">refreshComputed</span><span class="token punctuation">(</span>link<span class="token punctuation">.</span>dep<span class="token punctuation">.</span>computed<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token keyword">return</span> <span class="token boolean">true</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token keyword">return</span> <span class="token boolean">false</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 快速路径缓存</span></span>
+<span class="line"><span class="token keyword">if</span> <span class="token punctuation">(</span>computed<span class="token punctuation">.</span>globalVersion <span class="token operator">===</span> globalVersion<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">return</span> computed<span class="token punctuation">.</span>_value <span class="token comment">// 跳过计算</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="💾-内存优化" tabindex="-1"><a class="header-anchor" href="#💾-内存优化"><span>💾 内存优化</span></a></h2>
+<h3 id="_1-weakmap避免内存泄漏" tabindex="-1"><a class="header-anchor" href="#_1-weakmap避免内存泄漏"><span>1. WeakMap避免内存泄漏</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 全局依赖映射表</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">const</span> targetMap<span class="token operator">:</span> WeakMap<span class="token operator">&lt;</span>object<span class="token punctuation">,</span> Map<span class="token operator">&lt;</span><span class="token builtin">any</span><span class="token punctuation">,</span> Dep<span class="token operator">>></span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">WeakMap</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// WeakMap的优势</span></span>
+<span class="line"><span class="token comment">// 1. 当target被GC时，相关依赖自动清理</span></span>
+<span class="line"><span class="token comment">// 2. 避免内存泄漏</span></span>
+<span class="line"><span class="token comment">// 3. 自动垃圾回收</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 依赖收集</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">track</span><span class="token punctuation">(</span>target<span class="token operator">:</span> object<span class="token punctuation">,</span> type<span class="token operator">:</span> TrackOpTypes<span class="token punctuation">,</span> key<span class="token operator">:</span> <span class="token builtin">unknown</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>shouldTrack <span class="token operator">&amp;&amp;</span> activeSub<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 获取或创建target的依赖映射</span></span>
+<span class="line">    <span class="token keyword">let</span> depsMap <span class="token operator">=</span> targetMap<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span>target<span class="token punctuation">)</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>depsMap<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      targetMap<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span>target<span class="token punctuation">,</span> <span class="token punctuation">(</span>depsMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Map</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 获取或创建key的依赖</span></span>
+<span class="line">    <span class="token keyword">let</span> dep <span class="token operator">=</span> depsMap<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span>key<span class="token punctuation">)</span></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>dep<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      depsMap<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span>key<span class="token punctuation">,</span> <span class="token punctuation">(</span>dep <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Dep</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span>
+<span class="line">      dep<span class="token punctuation">.</span>map <span class="token operator">=</span> depsMap</span>
+<span class="line">      dep<span class="token punctuation">.</span>key <span class="token operator">=</span> key</span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 建立依赖关系</span></span>
+<span class="line">    dep<span class="token punctuation">.</span><span class="token function">track</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_2-双向链表o-1-操作" tabindex="-1"><a class="header-anchor" href="#_2-双向链表o-1-操作"><span>2. 双向链表O(1)操作</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 链接节点</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">class</span> <span class="token class-name">Link</span> <span class="token punctuation">{</span></span>
+<span class="line">  version<span class="token operator">:</span> <span class="token builtin">number</span></span>
+<span class="line">  nextDep<span class="token operator">?</span><span class="token operator">:</span> Link <span class="token comment">// 在effect的dep链表中的下一个</span></span>
+<span class="line">  prevDep<span class="token operator">?</span><span class="token operator">:</span> Link <span class="token comment">// 在effect的dep链表中的上一个</span></span>
+<span class="line">  nextSub<span class="token operator">?</span><span class="token operator">:</span> Link <span class="token comment">// 在dep的sub链表中的下一个</span></span>
+<span class="line">  prevSub<span class="token operator">?</span><span class="token operator">:</span> Link <span class="token comment">// 在dep的sub链表中的上一个</span></span>
+<span class="line">  prevActiveLink<span class="token operator">?</span><span class="token operator">:</span> Link</span>
+<span class="line"></span>
+<span class="line">  <span class="token function">constructor</span><span class="token punctuation">(</span></span>
+<span class="line">    <span class="token keyword">public</span> sub<span class="token operator">:</span> Subscriber<span class="token punctuation">,</span></span>
+<span class="line">    <span class="token keyword">public</span> dep<span class="token operator">:</span> Dep<span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">this</span><span class="token punctuation">.</span>version <span class="token operator">=</span> dep<span class="token punctuation">.</span>version</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// O(1)的依赖管理操作</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">addDep</span><span class="token punctuation">(</span>sub<span class="token operator">:</span> Subscriber<span class="token punctuation">,</span> dep<span class="token operator">:</span> Dep<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> link <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Link</span><span class="token punctuation">(</span>sub<span class="token punctuation">,</span> dep<span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 添加到dep的sub链表</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>dep<span class="token punctuation">.</span>subs<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    dep<span class="token punctuation">.</span>subs<span class="token punctuation">.</span>prevSub <span class="token operator">=</span> link</span>
+<span class="line">    link<span class="token punctuation">.</span>nextSub <span class="token operator">=</span> dep<span class="token punctuation">.</span>subs</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line">  dep<span class="token punctuation">.</span>subs <span class="token operator">=</span> link</span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 添加到sub的dep链表</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>sub<span class="token punctuation">.</span>deps<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    sub<span class="token punctuation">.</span>deps<span class="token punctuation">.</span>prevDep <span class="token operator">=</span> link</span>
+<span class="line">    link<span class="token punctuation">.</span>nextDep <span class="token operator">=</span> sub<span class="token punctuation">.</span>deps</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line">  sub<span class="token punctuation">.</span>deps <span class="token operator">=</span> link</span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">removeDep</span><span class="token punctuation">(</span>link<span class="token operator">:</span> Link<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">// 从dep的sub链表中移除</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>nextSub<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>nextSub<span class="token punctuation">.</span>prevSub <span class="token operator">=</span> link<span class="token punctuation">.</span>prevSub</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>prevSub<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>prevSub<span class="token punctuation">.</span>nextSub <span class="token operator">=</span> link<span class="token punctuation">.</span>nextSub</span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>dep<span class="token punctuation">.</span>subs <span class="token operator">=</span> link<span class="token punctuation">.</span>nextSub</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 从sub的dep链表中移除</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>nextDep<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>nextDep<span class="token punctuation">.</span>prevDep <span class="token operator">=</span> link<span class="token punctuation">.</span>prevDep</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>prevDep<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>prevDep<span class="token punctuation">.</span>nextDep <span class="token operator">=</span> link<span class="token punctuation">.</span>nextDep</span>
+<span class="line">  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">    link<span class="token punctuation">.</span>sub<span class="token punctuation">.</span>deps <span class="token operator">=</span> link<span class="token punctuation">.</span>nextDep</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_3-依赖清理机制" tabindex="-1"><a class="header-anchor" href="#_3-依赖清理机制"><span>3. 依赖清理机制</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 依赖清理</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">cleanupDeps</span><span class="token punctuation">(</span>sub<span class="token operator">:</span> Subscriber<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">let</span> head</span>
+<span class="line">  <span class="token keyword">let</span> tail <span class="token operator">=</span> sub<span class="token punctuation">.</span>depsTail</span>
+<span class="line">  <span class="token keyword">let</span> link <span class="token operator">=</span> tail</span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">while</span> <span class="token punctuation">(</span>link<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">const</span> prev <span class="token operator">=</span> link<span class="token punctuation">.</span>prevDep</span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>link<span class="token punctuation">.</span>version <span class="token operator">===</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 未使用的依赖：从链表中移除</span></span>
+<span class="line">      <span class="token keyword">if</span> <span class="token punctuation">(</span>link <span class="token operator">===</span> tail<span class="token punctuation">)</span> tail <span class="token operator">=</span> prev</span>
+<span class="line">      <span class="token function">removeSub</span><span class="token punctuation">(</span>link<span class="token punctuation">)</span></span>
+<span class="line">      <span class="token function">removeDep</span><span class="token punctuation">(</span>link<span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 使用的依赖：保留</span></span>
+<span class="line">      head <span class="token operator">=</span> link</span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">    <span class="token comment">// 恢复之前的活跃链接</span></span>
+<span class="line">    link<span class="token punctuation">.</span>dep<span class="token punctuation">.</span>activeLink <span class="token operator">=</span> link<span class="token punctuation">.</span>prevActiveLink</span>
+<span class="line">    link<span class="token punctuation">.</span>prevActiveLink <span class="token operator">=</span> <span class="token keyword">undefined</span></span>
+<span class="line">    link <span class="token operator">=</span> prev</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 更新头部和尾部指针</span></span>
+<span class="line">  sub<span class="token punctuation">.</span>deps <span class="token operator">=</span> head</span>
+<span class="line">  sub<span class="token punctuation">.</span>depsTail <span class="token operator">=</span> tail</span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="📊-性能监控" tabindex="-1"><a class="header-anchor" href="#📊-性能监控"><span>📊 性能监控</span></a></h2>
+<h3 id="_1-性能指标" tabindex="-1"><a class="header-anchor" href="#_1-性能指标"><span>1. 性能指标</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 性能监控</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">interface</span> <span class="token class-name">PerformanceMetrics</span> <span class="token punctuation">{</span></span>
+<span class="line">  renderTime<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 渲染时间</span></span>
+<span class="line">  patchTime<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 补丁时间</span></span>
+<span class="line">  mountTime<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 挂载时间</span></span>
+<span class="line">  updateTime<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 更新时间</span></span>
+<span class="line">  memoryUsage<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 内存使用</span></span>
+<span class="line">  componentCount<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// 组件数量</span></span>
+<span class="line">  vnodeCount<span class="token operator">:</span> <span class="token builtin">number</span> <span class="token comment">// VNode数量</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 性能监控器</span></span>
+<span class="line"><span class="token keyword">class</span> <span class="token class-name">PerformanceMonitor</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">private</span> metrics<span class="token operator">:</span> PerformanceMetrics <span class="token operator">=</span> <span class="token punctuation">{</span></span>
+<span class="line">    renderTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    patchTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    mountTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    updateTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    memoryUsage<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    componentCount<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    vnodeCount<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token function">startTimer</span><span class="token punctuation">(</span>type<span class="token operator">:</span> <span class="token keyword">keyof</span> PerformanceMetrics<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">this</span><span class="token punctuation">.</span>metrics<span class="token punctuation">[</span>type<span class="token punctuation">]</span> <span class="token operator">=</span> performance<span class="token punctuation">.</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token function">endTimer</span><span class="token punctuation">(</span>type<span class="token operator">:</span> <span class="token keyword">keyof</span> PerformanceMetrics<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">number</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">const</span> startTime <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>metrics<span class="token punctuation">[</span>type<span class="token punctuation">]</span></span>
+<span class="line">    <span class="token keyword">const</span> endTime <span class="token operator">=</span> performance<span class="token punctuation">.</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">    <span class="token keyword">const</span> duration <span class="token operator">=</span> endTime <span class="token operator">-</span> startTime</span>
+<span class="line">    <span class="token keyword">this</span><span class="token punctuation">.</span>metrics<span class="token punctuation">[</span>type<span class="token punctuation">]</span> <span class="token operator">=</span> duration</span>
+<span class="line">    <span class="token keyword">return</span> duration</span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token function">getMetrics</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> PerformanceMetrics <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">return</span> <span class="token punctuation">{</span> <span class="token operator">...</span><span class="token keyword">this</span><span class="token punctuation">.</span>metrics <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_2-性能分析" tabindex="-1"><a class="header-anchor" href="#_2-性能分析"><span>2. 性能分析</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 性能分析工具</span></span>
+<span class="line"><span class="token keyword">export</span> <span class="token keyword">function</span> <span class="token function">analyzePerformance</span><span class="token punctuation">(</span>app<span class="token operator">:</span> App<span class="token punctuation">)</span><span class="token operator">:</span> PerformanceReport <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> report<span class="token operator">:</span> PerformanceReport <span class="token operator">=</span> <span class="token punctuation">{</span></span>
+<span class="line">    totalRenderTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    averageRenderTime<span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span></span>
+<span class="line">    slowestComponents<span class="token operator">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span></span>
+<span class="line">    memoryLeaks<span class="token operator">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span></span>
+<span class="line">    optimizationSuggestions<span class="token operator">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 分析渲染性能</span></span>
+<span class="line">  <span class="token keyword">const</span> components <span class="token operator">=</span> <span class="token function">getAllComponents</span><span class="token punctuation">(</span>app<span class="token punctuation">)</span></span>
+<span class="line">  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> component <span class="token keyword">of</span> components<span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token keyword">const</span> renderTime <span class="token operator">=</span> <span class="token function">getComponentRenderTime</span><span class="token punctuation">(</span>component<span class="token punctuation">)</span></span>
+<span class="line">    report<span class="token punctuation">.</span>totalRenderTime <span class="token operator">+=</span> renderTime</span>
+<span class="line"></span>
+<span class="line">    <span class="token keyword">if</span> <span class="token punctuation">(</span>renderTime <span class="token operator">></span> <span class="token number">16</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">      <span class="token comment">// 超过16ms的组件</span></span>
+<span class="line">      report<span class="token punctuation">.</span>slowestComponents<span class="token punctuation">.</span><span class="token function">push</span><span class="token punctuation">(</span><span class="token punctuation">{</span></span>
+<span class="line">        name<span class="token operator">:</span> component<span class="token punctuation">.</span>type<span class="token punctuation">.</span>name<span class="token punctuation">,</span></span>
+<span class="line">        renderTime<span class="token punctuation">,</span></span>
+<span class="line">        suggestions<span class="token operator">:</span> <span class="token function">getOptimizationSuggestions</span><span class="token punctuation">(</span>component<span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line">      <span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line">    <span class="token punctuation">}</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  report<span class="token punctuation">.</span>averageRenderTime <span class="token operator">=</span> report<span class="token punctuation">.</span>totalRenderTime <span class="token operator">/</span> components<span class="token punctuation">.</span>length</span>
+<span class="line"></span>
+<span class="line">  <span class="token comment">// 分析内存使用</span></span>
+<span class="line">  <span class="token keyword">const</span> memoryUsage <span class="token operator">=</span> <span class="token function">getMemoryUsage</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token keyword">if</span> <span class="token punctuation">(</span>memoryUsage <span class="token operator">></span> <span class="token number">50</span> <span class="token operator">*</span> <span class="token number">1024</span> <span class="token operator">*</span> <span class="token number">1024</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 超过50MB</span></span>
+<span class="line">    report<span class="token punctuation">.</span>memoryLeaks<span class="token punctuation">.</span><span class="token function">push</span><span class="token punctuation">(</span><span class="token punctuation">{</span></span>
+<span class="line">      type<span class="token operator">:</span> <span class="token string">'high_memory_usage'</span><span class="token punctuation">,</span></span>
+<span class="line">      usage<span class="token operator">:</span> memoryUsage<span class="token punctuation">,</span></span>
+<span class="line">      suggestions<span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">'检查内存泄漏'</span><span class="token punctuation">,</span> <span class="token string">'优化数据结构'</span><span class="token punctuation">,</span> <span class="token string">'使用WeakMap'</span><span class="token punctuation">]</span><span class="token punctuation">,</span></span>
+<span class="line">    <span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line">  <span class="token keyword">return</span> report</span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="🎯-优化建议" tabindex="-1"><a class="header-anchor" href="#🎯-优化建议"><span>🎯 优化建议</span></a></h2>
+<h3 id="_1-编译时优化建议" tabindex="-1"><a class="header-anchor" href="#_1-编译时优化建议"><span>1. 编译时优化建议</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 1. 使用静态提升</span></span>
+<span class="line"><span class="token keyword">const</span> staticNode <span class="token operator">=</span> <span class="token comment">/*#__PURE__*/</span> <span class="token function">createVNode</span><span class="token punctuation">(</span><span class="token string">'div'</span><span class="token punctuation">,</span> <span class="token punctuation">{</span> <span class="token keyword">class</span><span class="token operator">:</span> <span class="token string">'static'</span> <span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 2. 合理使用补丁标志</span></span>
+<span class="line"><span class="token keyword">const</span> dynamicProps <span class="token operator">=</span> <span class="token punctuation">{</span> <span class="token keyword">class</span><span class="token operator">:</span> computedClass<span class="token punctuation">,</span> style<span class="token operator">:</span> computedStyle <span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 3. 块级优化</span></span>
+<span class="line"><span class="token keyword">const</span> blockNode <span class="token operator">=</span> <span class="token function">createElementBlock</span><span class="token punctuation">(</span><span class="token string">'div'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token punctuation">[</span></span>
+<span class="line">  <span class="token function">createElementVNode</span><span class="token punctuation">(</span><span class="token string">'span'</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token function">toDisplayString</span><span class="token punctuation">(</span>message<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">,</span></span>
+<span class="line"><span class="token punctuation">]</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 4. 缓存优化</span></span>
+<span class="line"><span class="token keyword">const</span> cachedValue <span class="token operator">=</span> <span class="token function">_cache</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token function">expensiveComputation</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_2-运行时优化建议" tabindex="-1"><a class="header-anchor" href="#_2-运行时优化建议"><span>2. 运行时优化建议</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 1. 使用快速路径</span></span>
+<span class="line"><span class="token keyword">if</span> <span class="token punctuation">(</span>patchFlag <span class="token operator">></span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">// 优化更新</span></span>
+<span class="line"><span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">// 全量更新</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 2. 批量更新</span></span>
+<span class="line"><span class="token function">startBatch</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line"><span class="token comment">// 多个状态更新</span></span>
+<span class="line"><span class="token function">endBatch</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 3. 合理使用缓存</span></span>
+<span class="line"><span class="token keyword">const</span> computedValue <span class="token operator">=</span> <span class="token function">computed</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token function">expensiveCalculation</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 4. 避免不必要的响应式</span></span>
+<span class="line"><span class="token keyword">const</span> staticData <span class="token operator">=</span> <span class="token function">markRaw</span><span class="token punctuation">(</span><span class="token punctuation">{</span> <span class="token keyword">static</span><span class="token operator">:</span> <span class="token boolean">true</span> <span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h3 id="_3-内存优化建议" tabindex="-1"><a class="header-anchor" href="#_3-内存优化建议"><span>3. 内存优化建议</span></a></h3>
+<div class="language-typescript line-numbers-mode" data-highlighter="prismjs" data-ext="ts"><pre v-pre><code><span class="line"><span class="token comment">// 1. 使用WeakMap</span></span>
+<span class="line"><span class="token keyword">const</span> cache <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">WeakMap</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 2. 及时清理引用</span></span>
+<span class="line"><span class="token function">onUnmounted</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">// 清理引用</span></span>
+<span class="line"><span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 3. 避免闭包陷阱</span></span>
+<span class="line"><span class="token keyword">function</span> <span class="token function">createHandler</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span></span>
+<span class="line">  <span class="token keyword">const</span> data <span class="token operator">=</span> <span class="token function">ref</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span></span>
+<span class="line">  <span class="token keyword">return</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span></span>
+<span class="line">    <span class="token comment">// 使用data</span></span>
+<span class="line">  <span class="token punctuation">}</span></span>
+<span class="line"><span class="token punctuation">}</span></span>
+<span class="line"></span>
+<span class="line"><span class="token comment">// 4. 使用shallowRef</span></span>
+<span class="line"><span class="token keyword">const</span> largeData <span class="token operator">=</span> <span class="token function">shallowRef</span><span class="token punctuation">(</span><span class="token punctuation">{</span></span>
+<span class="line">  <span class="token comment">/* 大量数据 */</span></span>
+<span class="line"><span class="token punctuation">}</span><span class="token punctuation">)</span></span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><h2 id="🎯-总结" tabindex="-1"><a class="header-anchor" href="#🎯-总结"><span>🎯 总结</span></a></h2>
+<p>Vue3的性能优化展现了现代前端框架的设计精髓：</p>
+<ol>
+<li><strong>编译时优化</strong> - 静态提升、补丁标志、块级优化</li>
+<li><strong>运行时优化</strong> - 快速路径、批量更新、缓存机制</li>
+<li><strong>内存优化</strong> - WeakMap、自动GC、依赖清理</li>
+<li><strong>性能监控</strong> - 指标收集、性能分析、优化建议</li>
+<li><strong>最佳实践</strong> - 优化建议、性能指南、最佳实践</li>
+</ol>
+<p>这套性能优化体系不仅为Vue3提供了卓越的性能表现，也为其他前端项目提供了优秀的设计参考。</p>
+</div></template>
+
+

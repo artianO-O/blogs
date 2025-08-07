@@ -3,18 +3,19 @@
 <p>on: 指定事件触发，可以是 pull 事件也可以是定时器
 jobs: 任务，一个任务由多个工作流组成
 steps: 步骤，一个任务由多个步骤构成</p>
-<ul>
-<li>name：action,一个步骤由多个 action 构成
-下列工作主要有
-部署环境：ubuntu-latest
-1.- name: Checkout // 下载源码到工作区
-2.- name: 设置 Node.js //下载 node
-3.- name: 安装依赖 // 下载依赖
-4.- name: 构建文档 // 运行打包命令
-5.- name: 部署文档 // 迁移文档到 branch: gh-pages 分支中,迁移源为：folder: docs/.vuepress/dist</li>
-</ul>
-<p>接下来只要 push 代码，就会自动执行下面的 actions,在 settings 选择 pages,deploy from a branch,选择 gh-pages 就可以看到部署的网页了
-部署的时候，需要注意.vuepress/config.js 配置 base: &quot;/blogs/&quot;, 需要保持与项目同名</p>
+<div class="language-text line-numbers-mode" data-highlighter="prismjs" data-ext="text"><pre v-pre><code><span class="line">- name：action,一个步骤由多个 action 构成</span>
+<span class="line">  下列工作主要有</span>
+<span class="line">  部署环境：ubuntu-latest</span>
+<span class="line">  1.- name: Checkout // 下载源码到工作区</span>
+<span class="line">  2.- name: 设置 Node.js //下载 node</span>
+<span class="line">  3.- name: 安装依赖 // 下载依赖</span>
+<span class="line">  4.- name: 构建文档 // 运行打包命令</span>
+<span class="line">  5.- name: 部署文档 // 迁移文档到 branch: gh-pages 分支中,迁移源为：folder: docs/.vuepress/dist</span>
+<span class="line"></span></code></pre>
+<div class="line-numbers" aria-hidden="true" style="counter-reset:line-number 0"><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div><div class="line-number"></div></div></div><p>接下来只要 push 代码，就会自动执行下面的 actions,在 settings 选择 pages,deploy from a branch,选择 gh-pages 就可以看到部署的网页了
+部署的时候，需要注意.vuepress/config.js 配置 base: &quot;/blogs/&quot;, 需要保持与项目同名
+https://github.com/actions
+https://github.com/marketplace?type=actions</p>
 <div class="language-text line-numbers-mode" data-highlighter="prismjs" data-ext="text"><pre v-pre><code><span class="line">name: 部署文档</span>
 <span class="line"></span>
 <span class="line">on:</span>

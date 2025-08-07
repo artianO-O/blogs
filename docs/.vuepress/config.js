@@ -25,8 +25,8 @@ export default defineUserConfig({
         link: "/githubAction",
       },
       {
-        text: "GitHub",
-        link: "https://github.com",
+        text: "Vue3源码解析",
+        link: "/vue3-core",
       },
     ],
 
@@ -42,6 +42,21 @@ export default defineUserConfig({
         {
           text: "GitHub Actions",
           children: ["/githubAction.md"],
+        },
+      ],
+      "/": [
+        {
+          text: "Vue3核心知识",
+          collapsible: true,
+          children: [
+            "/vue3-core",
+            "/01-architecture-design",
+            "/02-reactivity-system",
+            "/03-virtual-dom-system",
+            "/04-compiler-system",
+            "/05-component-system",
+            "/06-performance-optimization",
+          ],
         },
       ],
     },
